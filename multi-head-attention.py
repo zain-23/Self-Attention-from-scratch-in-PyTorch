@@ -11,7 +11,6 @@ class MultiHeadAttention(nn.Module):
         self.d_model = d_model
         self.num_heads = num_heads
         self.head_dim = d_model // num_heads
-        print("Head Dimension: ", self.head_dim)
 
         self.Wq = nn.Linear(d_model, d_model)
         self.Wk = nn.Linear(d_model, d_model)
@@ -25,7 +24,6 @@ class MultiHeadAttention(nn.Module):
 
         # Create Q, K and V
         Q = self.Wq(X)
-        print("Q Shape:", Q.shape)
         K = self.Wk(X)
         V = self.Wv(X)
 
@@ -36,8 +34,6 @@ class MultiHeadAttention(nn.Module):
             self.num_heads,
             self.head_dim
         ).transpose(1, 2)
-        print("Q Shape Split:", Q.shape)
-
 
         K = K.view(
             batch_size,
@@ -45,8 +41,6 @@ class MultiHeadAttention(nn.Module):
             self.num_heads,
             self.head_dim
         ).transpose(1, 2)
-        print("K Shape Split:", Q.shape)
-
 
         V = V.view(
             batch_size,
@@ -57,7 +51,6 @@ class MultiHeadAttention(nn.Module):
 
         # Attension scores
         scores = Q @ K.transpose(-2, -1)
-        print("Scores shape: ",scores.shape)
 
         # Scale
         scores = scores /  math.sqrt(self.head_dim)
@@ -83,15 +76,67 @@ class MultiHeadAttention(nn.Module):
             self.d_model
         )
 
-        print("Output", output.shape)
-
         # Final projection
         output = self.out_proj(output)
         return output
 
 
-attention = MultiHeadAttention(d_model=12, num_heads=3)
+class TransfermerBlock(nn.Module):
+    
+    def __init__(self, d_model, num_heads):
+        super().__init__()
 
-X = torch.randn(4, 10, 12)
+        self.norm1 = nn.LayerNorm(d_model)
+        self.norm2 = nn.LayerNorm(d_model)
 
-output = attention(X)
+        self.attention = MultiHeadAttention(d_model, num_heads)
+
+        self.ffn = nn.Sequential(
+            nn.Linear(d_model, 4 * d_model),
+            nn.GELU(),
+            nn.Linear(4 * d_model, d_model)
+        )
+
+
+    def forward(self, x):
+        x = x + self.attention(self.norm1(x))
+
+        x = x + self.ffn(self.norm1(x))
+
+        return x
+
+
+# Transformer
+class Transformer(nn.Module):
+
+    def __init__(self, d_model, num_heads, num_layers):
+        super().__init__()
+
+        self.blocks = nn.ModuleList([
+            TransfermerBlock(d_model, num_heads)
+            for _ in range(num_layers)
+        ])
+
+        self.norm = nn.LayerNorm(d_model)
+
+    def forward(self, x):
+        
+        for block in self.blocks:
+            x = block(x)
+
+        x = self.norm(x)
+
+        return x
+    
+model = Transformer(
+    d_model=64,
+    num_heads=8,
+    num_layers=12
+)
+
+x = torch.randn(4, 50, 64)
+
+output = model(x)
+
+print("Input :", x.shape)
+print("Output:", output.shape)
